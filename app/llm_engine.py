@@ -1,12 +1,35 @@
-from transformers import AutoTokenizer, AutoModelForCausalLM
-import torch
+# app/llm_engine.py
 
-# Load only once
-model_name = "microsoft/phi-2"  # Or mistral-7B if you have resources
-tokenizer = AutoTokenizer.from_pretrained(model_name)
-model = AutoModelForCausalLM.from_pretrained(model_name, torch_dtype=torch.float16 if torch.cuda.is_available() else torch.float32)
+import httpx
+import json
+
+OLLAMA_URL = "http://localhost:11434/api/generate"
+MODEL_NAME = "gemma"  # Change this to 'phi' or other model if needed
 
 def ask_llm(prompt: str) -> str:
-    inputs = tokenizer(prompt, return_tensors="pt").to(model.device)
-    outputs = model.generate(**inputs, max_new_tokens=100, temperature=0.7)
-    return tokenizer.decode(outputs[0], skip_special_tokens=True).replace(prompt, "").strip()
+    payload = {
+        "model": MODEL_NAME,
+        "prompt": prompt,
+        "stream": True
+    }
+
+    full_response = ""
+
+    try:
+        with httpx.stream("POST", OLLAMA_URL, json=payload, timeout=60.0) as response:
+            response.raise_for_status()
+
+            for line in response.iter_lines():
+                if line:
+                    try:
+                        data = json.loads(line)
+                        token = data.get("response", "")
+                        full_response += token
+                    except json.JSONDecodeError:
+                        continue
+
+        return full_response.strip()
+
+    except Exception as e:
+        print(f"[Ollama LLM ERROR] {e}")
+        return "⚠️ Could not get a response from the AI."

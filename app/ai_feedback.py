@@ -1,21 +1,38 @@
-from transformers import pipeline
+# llm_engine.py
 
-# Load the model for text generation
-feedback_pipeline = pipeline("text2text-generation", model="google/flan-t5-small")
+import httpx
 
-def generate_feedback(question: str, answer: str) -> str:
-    # Construct a prompt to ask the AI to validate the answer and suggest improvements
-    prompt = f"Given the question below, evaluate the user's answer and provide constructive feedback. If the answer is incorrect, provide the correct answer and suggest improvements.\n\nQuestion: {question}\nUser Answer: {answer}\nFeedback:"
+OLLAMA_URL = "http://localhost:11434/api/generate"
+DEFAULT_MODEL = "gemma"  # Replace with "phi", "llava", etc., if desired
 
-    # Get the feedback from the model
-    result = feedback_pipeline(prompt, max_length=200)[0]['generated_text']
+def generate_feedback(question: str, answer: str, model: str = DEFAULT_MODEL) -> str:
+    prompt = f"""
+You are an educational AI tutor.
 
-    # Return the stripped feedback text
-    return result.strip()
+Evaluate the student's answer and provide constructive feedback.
 
-# Example usage
-question = "What is the capital of France?"
-user_answer = "Berlin"
+If the answer is wrong, correct it and explain why.
 
-feedback = generate_feedback(question, user_answer)
-print(feedback)
+Question: {question}
+Student's Answer: {answer}
+Feedback:
+"""
+
+    payload = {
+        "model": model,
+        "prompt": prompt,
+        "stream": False
+    }
+
+    try:
+        response = httpx.post(OLLAMA_URL, json=payload, timeout=60)
+        response.raise_for_status()
+        return response.json()["response"].strip()
+    except httpx.HTTPStatusError as e:
+        print(f"❌ HTTP error {e.response.status_code}: {e.response.text}")
+    except httpx.RequestError as e:
+        print(f"❌ Request error: {e}")
+    except Exception as e:
+        print(f"❌ Unexpected error: {e}")
+
+    return "⚠️ Couldn't get feedback from the AI."
